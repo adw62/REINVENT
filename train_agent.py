@@ -6,6 +6,7 @@ import numpy as np
 import time
 import os
 from shutil import copyfile
+import math
 
 from model import RNN
 from data_structs import Vocabulary, Experience
@@ -15,10 +16,10 @@ from vizard_logger import VizardLog
 
 def train_agent(restore_prior_from='data/Prior.ckpt',
                 restore_agent_from='data/Prior.ckpt',
-                scoring_function='tanimoto',
-                scoring_function_kwargs=None,
+                scoring_function='arb_vec',
+                scoring_function_kwargs={},
                 save_dir=None, learning_rate=0.0005,
-                batch_size=64, n_steps=3000,
+                batch_size=50, n_steps=3000,
                 num_processes=0, sigma=60,
                 experience_replay=0):
 
@@ -45,7 +46,7 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
     for param in Prior.rnn.parameters():
         param.requires_grad = False
 
-    optimizer = torch.optim.Adam(Agent.rnn.parameters(), lr=0.0005)
+    optimizer = torch.optim.Adam(Agent.rnn.parameters(), learning_rate)
 
     # Scoring_function
     scoring_function = get_scoring_function(scoring_function=scoring_function, num_processes=num_processes,
@@ -125,7 +126,7 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
         print("\n       Step {}   Fraction valid SMILES: {:4.1f}  Time elapsed: {:.2f}h Time left: {:.2f}h".format(
               step, fraction_valid_smiles(smiles) * 100, time_elapsed, time_left))
         print("  Agent    Prior   Target   Score             SMILES")
-        for i in range(10):
+        for i in range(math.ceil(batch_size/10)):
             print(" {:6.2f}   {:6.2f}  {:6.2f}  {:6.2f}     {}".format(agent_likelihood[i],
                                                                        prior_likelihood[i],
                                                                        augmented_likelihood[i],
@@ -146,7 +147,7 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
         logger.log(np.array(step_score), "Scores")
 
     # If the entire training finishes, we create a new folder where we save this python file
-    # as well as some sampled sequences and the contents of the experinence (which are the highest
+    # as well as some sampled sequences and the contents of the experience (which are the highest
     # scored sequences seen during training)
     if not save_dir:
         save_dir = 'data/results/run_' + time.strftime("%Y-%m-%d-%H_%M_%S", time.localtime())

@@ -28,6 +28,24 @@ rdBase.DisableLog('rdApp.error')
    demanding the scoring function is and how well the OS handles the multiprocessing, this might
    be faster than multiprocessing in some cases."""
 
+class arb_vec():
+
+    def __init__(self, vector = np.array([10, 1, 0, 1, 5])):
+        self.vec = vector
+    def __call__(self, smile):
+        mol = Chem.MolFromSmiles(smile)
+        if mol:
+            atoms = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
+            num_carbons = atoms.count(6)
+            num_nitrogens = atoms.count(7)
+            num_oxygens = atoms.count(8)
+            num_sulpurs = atoms.count(16)
+            num_chlorine = atoms.count(17)
+            new_vector = np.array([num_carbons, num_nitrogens, num_oxygens, num_sulpurs, num_chlorine])
+            msd = np.square(np.subtract(self.vec, new_vector)).mean()
+            return np.exp(-msd)
+        return 0.0
+
 class no_sulphur():
     """Scores structures based on not containing sulphur."""
 
@@ -39,7 +57,8 @@ class no_sulphur():
         mol = Chem.MolFromSmiles(smile)
         if mol:
             has_sulphur = [16 not in [atom.GetAtomicNum() for atom in mol.GetAtoms()]]
-            return float(has_sulphur)
+            print([atom.GetAtomicNum() for atom in mol.GetAtoms()])
+            return float(has_sulphur[0])
         return 0.0
 
 class tanimoto():
@@ -175,7 +194,7 @@ class Singleprocessing():
 
 def get_scoring_function(scoring_function, num_processes=None, **kwargs):
     """Function that initializes and returns a scoring function by name"""
-    scoring_function_classes = [no_sulphur, tanimoto, activity_model]
+    scoring_function_classes = [no_sulphur, tanimoto, activity_model, arb_vec]
     scoring_functions = [f.__name__ for f in scoring_function_classes]
     scoring_function_class = [f for f in scoring_function_classes if f.__name__ == scoring_function][0]
 

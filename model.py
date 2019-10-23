@@ -45,7 +45,7 @@ class RNN():
             Retrieves the likelihood of a given sequence
 
             Args:
-                target: (batch_size * sequence_lenght) A batch of sequences
+                target: (batch_size * sequence_length) A batch of sequences
 
             Outputs:
                 log_probs : (batch_size) Log likelihood for each example*
@@ -98,9 +98,9 @@ class RNN():
             logits, h = self.rnn(x, h)
             prob = F.softmax(logits)
             log_prob = F.log_softmax(logits)
-            x = torch.multinomial(prob).view(-1)
+            x = torch.multinomial(prob, num_samples=1).view(-1)
             sequences.append(x.view(-1, 1))
-            log_probs +=  NLLLoss(log_prob, x)
+            log_probs += NLLLoss(log_prob, x)
             entropy += -torch.sum((log_prob * prob), 1)
 
             x = Variable(x.data)
