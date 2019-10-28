@@ -10,9 +10,15 @@ import math
 
 from model import RNN
 from data_structs import Vocabulary
+from torch.utils.data import DataLoader
+from data_structs import VecData, MolData
 from utils import seq_to_smiles
 
-def black_box(load_weights='data/Prior.ckpt', batch_size=1):
+def black_box(load_weights='data/Prior.ckpt', batch_size=128):
+    
+    vecdata = VecData("data/test_dat/vecs_test.dat")
+    data_vec = DataLoader(vecdata, batch_size=batch_size, shuffle=True, drop_last=True,
+                          collate_fn=MolData.collate_fn)
 
     voc = Vocabulary(init_from_file="data/Voc")
     Prior = RNN(voc)
@@ -25,17 +31,9 @@ def black_box(load_weights='data/Prior.ckpt', batch_size=1):
     else:
         Prior.rnn.load_state_dict(torch.load(load_weights, map_location=lambda storage, loc: storage))
 
-    #data = []
-    #for param in Prior.rnn.gru_1.parameters():
-    #    data.append(param)
-
-    data = Prior.rnn.gru_1.weight_ih
-    data = data*0.0
-    print(data)
-    Prior.rnn.gru_1.weight_ih = torch.nn.Parameter(data)
-
-    seqs, prior_likelihood, entropy = Prior.sample(batch_size)
-    smiles = seq_to_smiles(seqs, voc)
-    print(smiles)
+    for vec_batch in data_vec:
+        seqs, prior_likelihood, entropy = Prior.sample(batch_size, vec_batch)
+        smiles = seq_to_smiles(seqs, voc)
+        print(smiles)
 
 black_box()

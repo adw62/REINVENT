@@ -7,7 +7,7 @@ from rdkit import Chem
 from rdkit import rdBase
 from tqdm import tqdm
 
-from data_structs import MolData, Vocabulary
+from data_structs import MolData, VecData, Vocabulary
 from model import RNN
 from utils import Variable, decrease_learning_rate
 rdBase.DisableLog('rdApp.error')
@@ -19,29 +19,38 @@ def pretrain(restore_from=None):
     voc = Vocabulary(init_from_file="data/Voc")
 
     # Create a Dataset from a SMILES file
-    moldata = MolData("data/mols_filtered.smi", voc)
-    data = DataLoader(moldata, batch_size=128, shuffle=True, drop_last=True,
-                      collate_fn=MolData.collate_fn)
+    moldata = MolData("data/test_dat/mols_test.smi", voc)
+    vecdata = VecData("data/test_dat/vecs_test.dat")
+
+    batch_size = 128
+
+    data_mol = DataLoader(moldata, batch_size=batch_size, shuffle=True, drop_last=True,
+                          collate_fn=MolData.collate_fn)
+    data_vec = DataLoader(vecdata, batch_size=batch_size, shuffle=True, drop_last=True,
+                          collate_fn=MolData.collate_fn)
 
     Prior = RNN(voc)
 
     # Can restore from a saved RNN
     if restore_from:
         Prior.rnn.load_state_dict(torch.load(restore_from))
-
-    optimizer = torch.optim.Adam(Prior.rnn.parameters(), lr = 0.001)
-    for epoch in range(1, 6):
+    
+    optimizer = torch.optim.Adam(Prior.rnn.parameters(), lr=0.001)
+    for epoch in range(1, 10):
         # When training on a few million compounds, this model converges
         # in a few of epochs or even faster. If model sized is increased
         # its probably a good idea to check loss against an external set of
         # validation SMILES to make sure we dont overfit too much.
-        for step, batch in tqdm(enumerate(data), total=len(data)):
+        for step, (mol_batch, vec_batch) in tqdm(enumerate(zip(data_mol, data_vec)), total=len(data_mol)):
 
             # Sample from DataLoader
-            seqs = batch.long()
+            seqs = mol_batch.long()
+            vecs = vec_batch.float()
+
+            #Could calculate a loss here that is comparing vector in and out?
 
             # Calculate loss
-            log_p, _ = Prior.likelihood(seqs)
+            log_p, _ = Prior.likelihood(seqs, vecs)
             loss = - log_p.mean()
 
             # Calculate gradients and take a step
@@ -54,7 +63,7 @@ def pretrain(restore_from=None):
                 decrease_learning_rate(optimizer, decrease_by=0.03)
                 tqdm.write("*" * 50)
                 tqdm.write("Epoch {:3d}   step {:3d}    loss: {:5.2f}\n".format(epoch, step, loss.data.item()))
-                seqs, likelihood, _ = Prior.sample(128)
+                seqs, likelihood, _ = Prior.sample(128, vecs)
                 valid = 0
                 for i, seq in enumerate(seqs.cpu().numpy()):
                     smile = voc.decode(seq)

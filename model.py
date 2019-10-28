@@ -13,10 +13,10 @@ class MultiGRU(nn.Module):
     def __init__(self, voc_size):
         super(MultiGRU, self).__init__()
         self.embedding = nn.Embedding(voc_size, 128)
-        self.gru_1 = nn.GRUCell(128, 512)
-        self.gru_2 = nn.GRUCell(512, 512)
-        self.gru_3 = nn.GRUCell(512, 512)
-        self.linear = nn.Linear(512, voc_size)
+        self.gru_1 = nn.GRUCell(128, 330)
+        self.gru_2 = nn.GRUCell(330, 330)
+        self.gru_3 = nn.GRUCell(330, 330)
+        self.linear = nn.Linear(330, voc_size)
 
     def forward(self, x, h):
         x = self.embedding(x)
@@ -27,9 +27,11 @@ class MultiGRU(nn.Module):
         x = self.linear(x)
         return x, h_out
 
-    def init_h(self, batch_size):
+    def init_h(self, batch_size, latent_vectors):
         # Initial cell state is zero
-        return Variable(torch.zeros(3, batch_size, 512))
+        #x = Variable(torch.zeros(3, batch_size, 330))
+        print(latent_vectors)
+        return Variable(latent_vectors.repeat(3, 1, 1))
 
 class RNN():
     """Implements the Prior and Agent RNN. Needs a Vocabulary instance in
@@ -40,23 +42,24 @@ class RNN():
             self.rnn.cuda()
         self.voc = voc
 
-    def likelihood(self, target):
+    def simple_objective(self, target, latent_vectors):
         """
             Retrieves the likelihood of a given sequence
 
             Args:
                 target: (batch_size * sequence_length) A batch of sequences
-
+                latent_vectors: (batch_size * vector_length) A batch of vectors
             Outputs:
-                log_probs : (batch_size) Log likelihood for each example*
-                entropy: (batch_size) The entropies for the sequences. Not
-                                      currently used.
+
         """
         batch_size, seq_length = target.size()
         start_token = Variable(torch.zeros(batch_size, 1).long())
         start_token[:] = self.voc.vocab['GO']
         x = torch.cat((start_token, target[:, :-1]), 1)
-        h = self.rnn.init_h(batch_size)
+        h = self.rnn.init_h(batch_size, latent_vectors)
+
+        ###ENCODERE###
+        #take full output pass to encoder compare in input latent vector return loss
 
         log_probs = Variable(torch.zeros(batch_size))
         entropy = Variable(torch.zeros(batch_size))
@@ -68,7 +71,35 @@ class RNN():
             entropy += -torch.sum((log_prob * prob), 1)
         return log_probs, entropy
 
-    def sample(self, batch_size, max_length=140):
+    def likelihood(self, target, latent_vectors):
+        """
+            Retrieves the likelihood of a given sequence
+
+            Args:
+                target: (batch_size * sequence_length) A batch of sequences
+                latent_vectors: (batch_size * vector_length) A batch of vectors
+            Outputs:
+                log_probs : (batch_size) Log likelihood for each example*
+                entropy: (batch_size) The entropies for the sequences. Not
+                                      currently used.
+        """
+        batch_size, seq_length = target.size()
+        start_token = Variable(torch.zeros(batch_size, 1).long())
+        start_token[:] = self.voc.vocab['GO']
+        x = torch.cat((start_token, target[:, :-1]), 1)
+        h = self.rnn.init_h(batch_size, latent_vectors)
+
+        log_probs = Variable(torch.zeros(batch_size))
+        entropy = Variable(torch.zeros(batch_size))
+        for step in range(seq_length):
+            logits, h = self.rnn(x[:, step], h)
+            log_prob = F.log_softmax(logits)
+            prob = F.softmax(logits)
+            log_probs += NLLLoss(log_prob, target[:, step])
+            entropy += -torch.sum((log_prob * prob), 1)
+        return log_probs, entropy
+
+    def sample(self, batch_size, latent_vectors, max_length=140):
         """
             Sample a batch of sequences
 
@@ -84,7 +115,7 @@ class RNN():
         """
         start_token = Variable(torch.zeros(batch_size).long())
         start_token[:] = self.voc.vocab['GO']
-        h = self.rnn.init_h(batch_size)
+        h = self.rnn.init_h(batch_size, latent_vectors)
         x = start_token
 
         sequences = []
@@ -95,7 +126,7 @@ class RNN():
             finished = finished.cuda()
 
         for step in range(max_length):
-            logits, h = self.rnn(x, h)
+            logits, h = self.rnn(x, h) # implicitly calling forward
             prob = F.softmax(logits)
             log_prob = F.log_softmax(logits)
             x = torch.multinomial(prob, num_samples=1).view(-1)
@@ -133,3 +164,5 @@ def NLLLoss(inputs, targets):
     loss = Variable(target_expanded) * inputs
     loss = torch.sum(loss, 1)
     return loss
+
+

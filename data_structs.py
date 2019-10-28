@@ -93,8 +93,10 @@ class MolData(Dataset):
         self.voc = voc
         self.smiles = []
         with open(fname, 'r') as f:
-            for line in f:
-                self.smiles.append(line.split()[0])
+            for i, line in enumerate(f):
+                #remove header
+                if i != 0:
+                    self.smiles.append(line.split(',')[0])
 
     def __getitem__(self, i):
         mol = self.smiles[i]
@@ -108,6 +110,47 @@ class MolData(Dataset):
     def __str__(self):
         return "Dataset containing {} structures.".format(len(self))
 
+    @classmethod
+    def collate_fn(cls, arr):
+        """Function to take a list of encoded sequences and turn them into a batch"""
+        max_length = max([seq.size(0) for seq in arr])
+        collated_arr = Variable(torch.zeros(len(arr), max_length))
+        for i, seq in enumerate(arr):
+            collated_arr[i, :seq.size(0)] = seq
+        return collated_arr
+
+class VecData(Dataset):
+    """Custom PyTorch Dataset that takes a file containing vectors.
+
+        Args:
+                fname : path to a file containing \n separated SMILES.
+                voc   : a Vocabulary instance
+
+        Returns:
+                A custom PyTorch dataset for training the Prior.
+    """
+    ###ENCODER###
+    def __init__(self,  fname):
+        self.vectors = []
+        with open(fname, 'r') as f:
+            for i, line in enumerate(f):
+                #remove header
+                if i != 0:
+                    #remove first element of each line as this is just an index
+                    x = line.split(',')[1:]
+                    z = torch.FloatTensor([float(y) for y in x]) #Could swap to long here?!
+                    self.vectors.append(z)
+
+    def __getitem__(self, i):
+        vec = self.vectors[i]
+        return Variable(vec)
+
+    def __len__(self):
+        return len(self.vectors)
+
+    def __str__(self):
+        return "Dataset containing {} vectors.".format(len(self))
+                
     @classmethod
     def collate_fn(cls, arr):
         """Function to take a list of encoded sequences and turn them into a batch"""
