@@ -10,7 +10,7 @@ import time
 import torch
 from torch.utils.data import Dataset
 
-from utils import Variable
+from utils import Variable, get_latent_vector
 
 class Vocabulary(object):
     """A class for handling encoding/decoding from SMILES to an array of indices"""
@@ -79,86 +79,60 @@ class Vocabulary(object):
     def __str__(self):
         return "Vocabulary containing {} tokens: {}".format(len(self), self.chars)
 
-class MolData(Dataset):
-    """Custom PyTorch Dataset that takes a file containing SMILES.
 
+class Dataset(Dataset):
+
+    def __init__(self, voc, smi_file, vec_file):
+        """
         Args:
-                fname : path to a file containing \n separated SMILES.
-                voc   : a Vocabulary instance
-
-        Returns:
-                A custom PyTorch dataset for training the Prior.
-    """
-    def __init__(self, fname, voc):
+            csv_file (string): Path to the csv file with annotations.
+            root_dir (string): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
         self.voc = voc
         self.smiles = []
-        with open(fname, 'r') as f:
+        self.vectors = []
+        with open(smi_file, 'r') as f:
             for i, line in enumerate(f):
-                #remove header
+                # remove header
                 if i != 0:
-                    self.smiles.append(line.split(',')[0])
+                    smi_string = line.split(',')[0]
+                    self.smiles.append(smi_string)
+        if vec_file is not None:
+            with open(vec_file, 'r') as f:
+                for i, line in enumerate(f):
+                        x = line.split(',')
+                        z = np.array([float(y) for y in x])
+                        self.vectors.append(z)
+        else:
+            print('Using custom encoder for latent vector input')
+            for smi in self.smiles:
+                self.vectors.append(get_latent_vector(smi))
+            np.savetxt('./data/vecs.dat', self.vectors, fmt='%.18e', delimiter=',', newline='\n')
 
-    def __getitem__(self, i):
-        mol = self.smiles[i]
-        tokenized = self.voc.tokenize(mol)
-        encoded = self.voc.encode(tokenized)
-        return Variable(encoded)
 
     def __len__(self):
         return len(self.smiles)
 
-    def __str__(self):
-        return "Dataset containing {} structures.".format(len(self))
-
-    @classmethod
-    def collate_fn(cls, arr):
-        """Function to take a list of encoded sequences and turn them into a batch"""
-        max_length = max([seq.size(0) for seq in arr])
-        collated_arr = Variable(torch.zeros(len(arr), max_length))
-        for i, seq in enumerate(arr):
-            collated_arr[i, :seq.size(0)] = seq
-        return collated_arr
-
-class VecData(Dataset):
-    """Custom PyTorch Dataset that takes a file containing vectors.
-
-        Args:
-                fname : path to a file containing \n separated SMILES.
-                voc   : a Vocabulary instance
-
-        Returns:
-                A custom PyTorch dataset for training the Prior.
-    """
-    ###ENCODER###
-    def __init__(self,  fname):
-        self.vectors = []
-        with open(fname, 'r') as f:
-            for i, line in enumerate(f):
-                #remove header
-                if i != 0:
-                    #remove first element of each line as this is just an index
-                    x = line.split(',')[1:]
-                    z = torch.FloatTensor([float(y) for y in x]) #Could swap to long here?!
-                    self.vectors.append(z)
-
     def __getitem__(self, i):
+        mol = self.smiles[i]
         vec = self.vectors[i]
-        return Variable(vec)
+        tokenized = self.voc.tokenize(mol)
+        encoded = self.voc.encode(tokenized)
+        return [Variable(encoded), Variable(vec)]
 
-    def __len__(self):
-        return len(self.vectors)
-
-    def __str__(self):
-        return "Dataset containing {} vectors.".format(len(self))
-                
     @classmethod
     def collate_fn(cls, arr):
         """Function to take a list of encoded sequences and turn them into a batch"""
-        max_length = max([seq.size(0) for seq in arr])
-        collated_arr = Variable(torch.zeros(len(arr), max_length))
-        for i, seq in enumerate(arr):
-            collated_arr[i, :seq.size(0)] = seq
-        return collated_arr
+        max_length_smi = max([data[0].size(0) for data in arr])
+        max_length_vec = max([data[1].size(0) for data in arr])
+        collated_arr_smi = Variable(torch.zeros(len(arr), max_length_smi))
+        collated_arr_vec = Variable(torch.zeros(len(arr), max_length_vec))
+        for i, data in enumerate(arr):
+            collated_arr_smi[i, :data[0].size(0)] = data[0]
+            collated_arr_vec[i, :data[1].size(0)] = data[1]
+        return collated_arr_smi, collated_arr_vec
 
 class Experience(object):
     """Class for prioritized experience replay that remembers the highest scored sequences
