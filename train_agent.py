@@ -7,19 +7,23 @@ import time
 import os
 from shutil import copyfile
 import math
+from tqdm import tqdm
+from torch.utils.data import DataLoader
+from rdkit import Chem
 
 from model import RNN
-from data_structs import Vocabulary, Experience
+from data_structs import Dataset, Vocabulary, Experience
 from scoring_functions import get_scoring_function
 from utils import Variable, seq_to_smiles, fraction_valid_smiles, unique
 from vizard_logger import VizardLog
+from os import path
 
 def train_agent(restore_prior_from='data/Prior.ckpt',
                 restore_agent_from='data/Prior.ckpt',
                 scoring_function='arb_vec',
                 scoring_function_kwargs={},
                 save_dir=None, learning_rate=0.0005,
-                batch_size=50, n_steps=3000,
+                batch_size=100, n_steps=3000,
                 num_processes=0, sigma=60,
                 experience_replay=0):
 
@@ -27,8 +31,16 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
 
     start_time = time.time()
 
-    Prior = RNN(voc)
-    Agent = RNN(voc)
+    # Create a Dataset from a SMILES file
+    if path.isfile('./data/vecs.dat'):
+        data = Dataset(voc, "data/mols.smi", vec_file='./data/vecs.dat')
+    else:
+        data = Dataset(voc, "data/mols.smi", vec_file=None)
+    loader = DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True,
+                        collate_fn=Dataset.collate_fn)
+
+    Prior = RNN(voc, len(data[0][1]))
+    Agent = RNN(voc, len(data[0][1]))
 
     logger = VizardLog('data/logs')
 
@@ -69,10 +81,12 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
 
     print("Model initialized, starting training...")
 
-    for step in range(n_steps):
+    for step, (_, vec_batch) in tqdm(enumerate(loader), total=len(loader)):
+
+        real_vecs = vec_batch.float()
 
         # Sample from Agent
-        seqs, agent_likelihood, entropy = Agent.sample(batch_size)
+        seqs, agent_likelihood, entropy = Agent.sample(batch_size, real_vecs)
 
         # Remove duplicates, ie only consider unique seqs
         unique_idxs = unique(seqs)
@@ -81,9 +95,13 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
         entropy = entropy[unique_idxs]
 
         # Get prior likelihood and score
-        prior_likelihood, _ = Prior.likelihood(Variable(seqs))
+        ###ERROR HERE SOMEWHERE
+        if len(seqs) != 100:
+            print(seqs)
+        prior_likelihood, _ = Prior.likelihood(Variable(seqs), real_vecs)
         smiles = seq_to_smiles(seqs, voc)
-        score = scoring_function(smiles)
+        data = [[x, y] for x, y in zip(smiles, real_vecs)]
+        score = scoring_function(data)
 
         # Calculate augmented likelihood
         augmented_likelihood = prior_likelihood + sigma * Variable(score)
@@ -91,8 +109,8 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
 
         # Experience Replay
         # First sample
-        if experience_replay and len(experience)>4:
-            exp_seqs, exp_score, exp_prior_likelihood = experience.sample(4)
+        if experience_replay and len(experience) > 4:
+            exp_seqs, exp_score, exp_prior_likelihood = experience.sample(4, real_vecs)
             exp_agent_likelihood, exp_entropy = Agent.likelihood(exp_seqs.long())
             exp_augmented_likelihood = exp_prior_likelihood + sigma * exp_score
             exp_loss = torch.pow((Variable(exp_augmented_likelihood) - exp_agent_likelihood), 2)
@@ -157,6 +175,7 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
     experience.print_memory(os.path.join(save_dir, "memory"))
     torch.save(Agent.rnn.state_dict(), os.path.join(save_dir, 'Agent.ckpt'))
 
+    '''
     seqs, agent_likelihood, entropy = Agent.sample(256)
     prior_likelihood, _ = Prior.likelihood(Variable(seqs))
     prior_likelihood = prior_likelihood.data.cpu().numpy()
@@ -166,6 +185,8 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
         f.write("SMILES Score PriorLogP\n")
         for smiles, score, prior_likelihood in zip(smiles, score, prior_likelihood):
             f.write("{} {:5.2f} {:6.2f}\n".format(smiles, score, prior_likelihood))
+    '''
+
 
 if __name__ == "__main__":
     train_agent()

@@ -11,6 +11,9 @@ import pickle
 import re
 import threading
 import pexpect
+
+from utils import get_latent_vector
+
 rdBase.DisableLog('rdApp.error')
 
 """Scoring function should be a class where some tasks that are shared for every call
@@ -30,21 +33,32 @@ rdBase.DisableLog('rdApp.error')
 
 class arb_vec():
 
-    def __init__(self, vector = np.array([10, 1, 0, 1, 5])):
-        self.vec = vector
-    def __call__(self, smile):
-        mol = Chem.MolFromSmiles(smile)
-        if mol:
-            atoms = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
-            num_carbons = atoms.count(6)
-            num_nitrogens = atoms.count(7)
-            num_oxygens = atoms.count(8)
-            num_sulpurs = atoms.count(16)
-            num_chlorine = atoms.count(17)
-            new_vector = np.array([num_carbons, num_nitrogens, num_oxygens, num_sulpurs, num_chlorine])
-            msd = np.square(np.subtract(self.vec, new_vector)).mean()
-            return np.exp(-msd)
-        return 0.0
+    def __init__(self):
+        pass
+    def __call__(self, data):
+        gen_vec = get_latent_vector(data[0])
+        real_vec = data[1].cpu().numpy()
+        msd = np.mean(np.square(gen_vec-real_vec))
+        if gen_vec[0] == 1000.:
+            return 0.0
+        return max(1/msd, 10)
+
+
+'''
+        for smi, vec in zip(smiles, vecs):
+            mol = Chem.MolFromSmiles(smi)
+            if mol:
+                atoms = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
+                num_carbons = atoms.count(6)
+                num_nitrogens = atoms.count(7)
+                num_oxygens = atoms.count(8)
+                num_sulpurs = atoms.count(16)
+                num_chlorine = atoms.count(17)
+                new_vector = np.array([num_carbons, num_nitrogens, num_oxygens, num_sulpurs, num_chlorine])
+                msd = np.square(np.subtract(self.vec, new_vector)).mean()
+                return 
+            return 0.0
+'''
 
 class no_sulphur():
     """Scores structures based on not containing sulphur."""

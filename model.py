@@ -10,13 +10,13 @@ from utils import Variable
 class MultiGRU(nn.Module):
     """ Implements a three layer GRU cell including an embedding layer
        and an output linear layer back to the size of the vocabulary"""
-    def __init__(self, voc_size):
+    def __init__(self, voc_size, latent_vec_size):
         super(MultiGRU, self).__init__()
         self.embedding = nn.Embedding(voc_size, 128)
-        self.gru_1 = nn.GRUCell(128, 330)
-        self.gru_2 = nn.GRUCell(330, 330)
-        self.gru_3 = nn.GRUCell(330, 330)
-        self.linear = nn.Linear(330, voc_size)
+        self.gru_1 = nn.GRUCell(128, latent_vec_size)
+        self.gru_2 = nn.GRUCell(latent_vec_size, latent_vec_size)
+        self.gru_3 = nn.GRUCell(latent_vec_size, latent_vec_size)
+        self.linear = nn.Linear(latent_vec_size, voc_size)
 
     def forward(self, x, h):
         x = self.embedding(x)
@@ -30,14 +30,13 @@ class MultiGRU(nn.Module):
     def init_h(self, batch_size, latent_vectors):
         # Initial cell state is zero
         #x = Variable(torch.zeros(3, batch_size, 330))
-        print(latent_vectors)
         return Variable(latent_vectors.repeat(3, 1, 1))
 
 class RNN():
     """Implements the Prior and Agent RNN. Needs a Vocabulary instance in
     order to determine size of the vocabulary and index of the END token"""
-    def __init__(self, voc):
-        self.rnn = MultiGRU(voc.vocab_size)
+    def __init__(self, voc, latent_vec_size):
+        self.rnn = MultiGRU(voc.vocab_size, latent_vec_size)
         if torch.cuda.is_available():
             self.rnn.cuda()
         self.voc = voc
