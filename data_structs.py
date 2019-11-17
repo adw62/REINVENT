@@ -10,7 +10,7 @@ import time
 import torch
 from torch.utils.data import Dataset
 
-from utils import Variable, get_latent_vector
+from utils import Variable, get_latent_vector, get_headings
 
 class Vocabulary(object):
     """A class for handling encoding/decoding from SMILES to an array of indices"""
@@ -81,7 +81,6 @@ class Vocabulary(object):
 
 
 class Dataset(Dataset):
-
     def __init__(self, voc, smi_file, vec_file):
         """
         Args:
@@ -92,25 +91,28 @@ class Dataset(Dataset):
         """
         self.voc = voc
         self.smiles = []
-        self.vectors = []
         with open(smi_file, 'r') as f:
             for i, line in enumerate(f):
                 # remove header
                 if i != 0:
                     smi_string = line.split(',')[0]
                     self.smiles.append(smi_string)
-        if vec_file is not None:
-            with open(vec_file, 'r') as f:
-                for i, line in enumerate(f):
-                        x = line.split(',')
-                        z = np.array([float(y) for y in x])
-                        self.vectors.append(z)
-        else:
-            print('Using custom encoder for latent vector input')
-            for smi in self.smiles:
-                self.vectors.append(get_latent_vector(smi))
-            np.savetxt('./data/vecs.dat', self.vectors, fmt='%.18e', delimiter=',', newline='\n')
-
+        self.vectors, self.mew, self.std = get_latent_vector(self.smiles, vec_file, moments=True)
+        print('mew: {}'.format(self.mew))
+        print('std: {}'.format(self.std)) 
+        self.vectors = (self.vectors - self.mew) / self.std
+        if vec_file is None:
+            print('Saving vectors')
+            vectors_write = [np.append(i, vec) for i, vec in enumerate(self.vectors)]
+            header = get_headings()
+            header = np.append('CompoundID', header)
+            str_header = ""
+            for i, ele in enumerate(header):
+                if i != 0:
+                    str_header += ','+ele
+                else:
+                    str_header += ele
+            np.savetxt('./data/vecs.dat', vectors_write, header=str_header, fmt='%.18e', delimiter=',', comments='', newline='\n')
 
     def __len__(self):
         return len(self.smiles)
@@ -245,8 +247,11 @@ def canonicalize_smiles_from_file(fname):
                 print("{} lines processed.".format(i))
             smiles = line.split(" ")[0]
             mol = Chem.MolFromSmiles(smiles)
-            if filter_mol(mol):
-                smiles_list.append(Chem.MolToSmiles(mol))
+            if not mol:
+                print('Found invalid smiles in training set, i=={}, removing from set'.format(i))
+            else:
+                #Removed filter, we are interested in everything
+                smiles_list.append(Chem.MolToSmiles(mol))   
         print("{} SMILES retrieved".format(len(smiles_list)))
         return smiles_list
 

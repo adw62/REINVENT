@@ -19,16 +19,17 @@ def pretrain(restore_from=None):
     # Read vocabulary from a file
     voc = Vocabulary(init_from_file="data/Voc")
 
+    batch_size = 128
+
     # Create a Dataset from a SMILES file
     if path.isfile('./data/vecs.dat'):
+        print('Found vectors, reading from file')
         data = Dataset(voc, "data/mols.smi", vec_file='./data/vecs.dat')
     else:
         data = Dataset(voc, "data/mols.smi", vec_file=None)
-
-    batch_size = 100
-
     loader = DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True,
                         collate_fn=Dataset.collate_fn)
+    
     Prior = RNN(voc, len(data[0][1]))
 
     # Can restore from a saved RNN
@@ -46,8 +47,6 @@ def pretrain(restore_from=None):
             # Sample from DataLoader
             seqs = smi_batch.long()
             vecs = vec_batch.float()
-
-            #Could calculate a loss here that is comparing vector in and out?
 
             # Calculate loss
             log_p, _ = Prior.likelihood(seqs, vecs)

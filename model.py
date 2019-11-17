@@ -41,35 +41,6 @@ class RNN():
             self.rnn.cuda()
         self.voc = voc
 
-    def simple_objective(self, target, latent_vectors):
-        """
-            Retrieves the likelihood of a given sequence
-
-            Args:
-                target: (batch_size * sequence_length) A batch of sequences
-                latent_vectors: (batch_size * vector_length) A batch of vectors
-            Outputs:
-
-        """
-        batch_size, seq_length = target.size()
-        start_token = Variable(torch.zeros(batch_size, 1).long())
-        start_token[:] = self.voc.vocab['GO']
-        x = torch.cat((start_token, target[:, :-1]), 1)
-        h = self.rnn.init_h(batch_size, latent_vectors)
-
-        ###ENCODERE###
-        #take full output pass to encoder compare in input latent vector return loss
-
-        log_probs = Variable(torch.zeros(batch_size))
-        entropy = Variable(torch.zeros(batch_size))
-        for step in range(seq_length):
-            logits, h = self.rnn(x[:, step], h)
-            log_prob = F.log_softmax(logits)
-            prob = F.softmax(logits)
-            log_probs += NLLLoss(log_prob, target[:, step])
-            entropy += -torch.sum((log_prob * prob), 1)
-        return log_probs, entropy
-
     def likelihood(self, target, latent_vectors):
         """
             Retrieves the likelihood of a given sequence
@@ -112,6 +83,7 @@ class RNN():
             entropy: (batch_size) The entropies for the sequences. Not
                                     currently used.
         """
+
         start_token = Variable(torch.zeros(batch_size).long())
         start_token[:] = self.voc.vocab['GO']
         h = self.rnn.init_h(batch_size, latent_vectors)
@@ -139,6 +111,7 @@ class RNN():
             if torch.prod(finished) == 1: break
 
         sequences = torch.cat(sequences, 1)
+
         return sequences.data, log_probs, entropy
 
 def NLLLoss(inputs, targets):

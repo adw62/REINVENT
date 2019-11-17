@@ -10,35 +10,33 @@ import math
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from rdkit import Chem
+from os import path
+
 
 from model import RNN
-from data_structs import Dataset, Vocabulary, Experience
+from data_structs import Vocabulary, Experience, Dataset
 from scoring_functions import get_scoring_function
-from utils import Variable, seq_to_smiles, fraction_valid_smiles, unique
+from utils import Variable, seq_to_smiles, fraction_valid_smiles, unique, get_latent_vector
 from vizard_logger import VizardLog
-from os import path
 
 def train_agent(restore_prior_from='data/Prior.ckpt',
                 restore_agent_from='data/Prior.ckpt',
+                data=None,
+                voc=None,
                 scoring_function='arb_vec',
                 scoring_function_kwargs={},
                 save_dir=None, learning_rate=0.0005,
-                batch_size=100, n_steps=3000,
+                batch_size=128, n_steps=3000,
                 num_processes=0, sigma=60,
                 experience_replay=0):
 
-    voc = Vocabulary(init_from_file="data/Voc")
-
     start_time = time.time()
 
-    # Create a Dataset from a SMILES file
-    if path.isfile('./data/vecs.dat'):
-        data = Dataset(voc, "data/mols.smi", vec_file='./data/vecs.dat')
-    else:
-        data = Dataset(voc, "data/mols.smi", vec_file=None)
     loader = DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True,
                         collate_fn=Dataset.collate_fn)
 
+
+    print('Loading prior and agent...')
     Prior = RNN(voc, len(data[0][1]))
     Agent = RNN(voc, len(data[0][1]))
 
@@ -82,25 +80,16 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
     print("Model initialized, starting training...")
 
     for step, (_, vec_batch) in tqdm(enumerate(loader), total=len(loader)):
-
         real_vecs = vec_batch.float()
 
         # Sample from Agent
         seqs, agent_likelihood, entropy = Agent.sample(batch_size, real_vecs)
 
-        # Remove duplicates, ie only consider unique seqs
-        unique_idxs = unique(seqs)
-        seqs = seqs[unique_idxs]
-        agent_likelihood = agent_likelihood[unique_idxs]
-        entropy = entropy[unique_idxs]
-
         # Get prior likelihood and score
-        ###ERROR HERE SOMEWHERE
-        if len(seqs) != 100:
-            print(seqs)
         prior_likelihood, _ = Prior.likelihood(Variable(seqs), real_vecs)
         smiles = seq_to_smiles(seqs, voc)
-        data = [[x, y] for x, y in zip(smiles, real_vecs)]
+        gen_vecs = get_latent_vector(smiles)
+        data = [[x, y] for x, y in zip(gen_vecs, real_vecs)]
         score = scoring_function(data)
 
         # Calculate augmented likelihood
@@ -109,7 +98,7 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
 
         # Experience Replay
         # First sample
-        if experience_replay and len(experience) > 4:
+        if experience_replay and len(experience)>4:
             exp_seqs, exp_score, exp_prior_likelihood = experience.sample(4, real_vecs)
             exp_agent_likelihood, exp_entropy = Agent.likelihood(exp_seqs.long())
             exp_augmented_likelihood = exp_prior_likelihood + sigma * exp_score
@@ -175,8 +164,7 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
     experience.print_memory(os.path.join(save_dir, "memory"))
     torch.save(Agent.rnn.state_dict(), os.path.join(save_dir, 'Agent.ckpt'))
 
-    '''
-    seqs, agent_likelihood, entropy = Agent.sample(256)
+    seqs, agent_likelihood, entropy = Agent.sample(batch_size, real_vecs)
     prior_likelihood, _ = Prior.likelihood(Variable(seqs))
     prior_likelihood = prior_likelihood.data.cpu().numpy()
     smiles = seq_to_smiles(seqs, voc)
@@ -185,8 +173,19 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
         f.write("SMILES Score PriorLogP\n")
         for smiles, score, prior_likelihood in zip(smiles, score, prior_likelihood):
             f.write("{} {:5.2f} {:6.2f}\n".format(smiles, score, prior_likelihood))
-    '''
-
 
 if __name__ == "__main__":
-    train_agent()
+
+    voc = Vocabulary(init_from_file="data/Voc")
+
+    # Create a Dataset from a SMILES file
+    if path.isfile('./data/vecs.dat'):
+        print('Found vectors, reading from file...')
+        data = Dataset(voc, "data/mols.smi", vec_file='./data/vecs.dat')
+    else:
+        data = Dataset(voc, "data/mols.smi", vec_file=None)
+
+    mew = data.mew
+    std = data.std
+
+    train_agent(data=data, voc=voc, scoring_function_kwargs={'mew':mew, 'std':std})

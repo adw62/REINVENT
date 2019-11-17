@@ -5,16 +5,15 @@ from rdkit import Chem
 from rdkit import rdBase
 from rdkit.Chem import AllChem
 from rdkit import DataStructs
-from sklearn import svm
 import time
 import pickle
 import re
 import threading
 import pexpect
-
-from utils import get_latent_vector
-
 rdBase.DisableLog('rdApp.error')
+
+from utils import get_moments, get_latent_vector
+
 
 """Scoring function should be a class where some tasks that are shared for every call
    can be reallocated to the __init__, and has a __call__ method which takes a single SMILES of
@@ -32,33 +31,19 @@ rdBase.DisableLog('rdApp.error')
    be faster than multiprocessing in some cases."""
 
 class arb_vec():
-
+    kwargs = ["mew", "std"]
     def __init__(self):
         pass
     def __call__(self, data):
-        gen_vec = get_latent_vector(data[0])
-        real_vec = data[1].cpu().numpy()
-        msd = np.mean(np.square(gen_vec-real_vec))
-        if gen_vec[0] == 1000.:
+        gen_vec = data[0]
+        if gen_vec is not False:
+            real_vec = data[1].cpu().numpy()
+            gen_vec = (gen_vec-self.mew)/self.std
+            real_vec = (real_vec-self.mew)/self.std
+            msd = np.mean(np.square(gen_vec-real_vec))
+            return 0.01 + np.exp(-msd)
+        else:
             return 0.0
-        return max(1/msd, 10)
-
-
-'''
-        for smi, vec in zip(smiles, vecs):
-            mol = Chem.MolFromSmiles(smi)
-            if mol:
-                atoms = [atom.GetAtomicNum() for atom in mol.GetAtoms()]
-                num_carbons = atoms.count(6)
-                num_nitrogens = atoms.count(7)
-                num_oxygens = atoms.count(8)
-                num_sulpurs = atoms.count(16)
-                num_chlorine = atoms.count(17)
-                new_vector = np.array([num_carbons, num_nitrogens, num_oxygens, num_sulpurs, num_chlorine])
-                msd = np.square(np.subtract(self.vec, new_vector)).mean()
-                return 
-            return 0.0
-'''
 
 class no_sulphur():
     """Scores structures based on not containing sulphur."""
