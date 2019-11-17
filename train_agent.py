@@ -79,6 +79,7 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
 
     print("Model initialized, starting training...")
 
+
     for step, (_, vec_batch) in tqdm(enumerate(loader), total=len(loader)):
         real_vecs = vec_batch.float()
 
@@ -175,15 +176,15 @@ def train_agent(restore_prior_from='data/Prior.ckpt',
             f.write("{} {:5.2f} {:6.2f}\n".format(smiles, score, prior_likelihood))
 
 if __name__ == "__main__":
-
+    
     voc = Vocabulary(init_from_file="data/Voc")
 
     # Create a Dataset from a SMILES file
-    if path.isfile('./data/vecs.dat'):
+    if path.isfile('./data/agent/vecs.dat'):
         print('Found vectors, reading from file...')
-        data = Dataset(voc, "data/mols.smi", vec_file='./data/vecs.dat')
+        data = Dataset(voc, "data/mols.smi", vec_file='./data/agent/vecs.dat')
     else:
-        data = Dataset(voc, "data/mols.smi", vec_file=None)
+        raise ValueError('No agent Data')
 
     mew = data.mew
     std = data.std

@@ -19,7 +19,7 @@ def pretrain(restore_from=None):
     # Read vocabulary from a file
     voc = Vocabulary(init_from_file="data/Voc")
 
-    batch_size = 128
+    batch_size = 1
 
     # Create a Dataset from a SMILES file
     if path.isfile('./data/vecs.dat'):
@@ -29,7 +29,7 @@ def pretrain(restore_from=None):
         data = Dataset(voc, "data/mols.smi", vec_file=None)
     loader = DataLoader(data, batch_size=batch_size, shuffle=True, drop_last=True,
                         collate_fn=Dataset.collate_fn)
-    
+
     Prior = RNN(voc, len(data[0][1]))
 
     # Can restore from a saved RNN

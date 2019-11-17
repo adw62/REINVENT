@@ -39,9 +39,8 @@ class arb_vec():
         if gen_vec is not False:
             real_vec = data[1].cpu().numpy()
             gen_vec = (gen_vec-self.mew)/self.std
-            real_vec = (real_vec-self.mew)/self.std
             msd = np.mean(np.square(gen_vec-real_vec))
-            return 0.01 + np.exp(-msd)
+            return 0.2 + np.exp(-msd)
         else:
             return 0.0
 

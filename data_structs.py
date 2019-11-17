@@ -98,8 +98,6 @@ class Dataset(Dataset):
                     smi_string = line.split(',')[0]
                     self.smiles.append(smi_string)
         self.vectors, self.mew, self.std = get_latent_vector(self.smiles, vec_file, moments=True)
-        print('mew: {}'.format(self.mew))
-        print('std: {}'.format(self.std)) 
         self.vectors = (self.vectors - self.mew) / self.std
         if vec_file is None:
             print('Saving vectors')
@@ -115,6 +113,8 @@ class Dataset(Dataset):
             np.savetxt('./data/vecs.dat', vectors_write, header=str_header, fmt='%.18e', delimiter=',', comments='', newline='\n')
 
     def __len__(self):
+        if len(self.smiles) != len(self.vectors):
+            raise ValueError('Length of smiles data {} does not match length of vector data'.format(len(self.smiles), len(self.vectors)))
         return len(self.smiles)
 
     def __getitem__(self, i):
@@ -248,10 +248,9 @@ def canonicalize_smiles_from_file(fname):
             smiles = line.split(" ")[0]
             mol = Chem.MolFromSmiles(smiles)
             if not mol:
-                print('Found invalid smiles in training set, i=={}, removing from set'.format(i))
-            else:
-                #Removed filter, we are interested in everything
-                smiles_list.append(Chem.MolToSmiles(mol))   
+                raise ValueError('Found invalid smiles in training set')
+            #Removed filter, we are interested in everything
+            smiles_list.append(Chem.MolToSmiles(mol))
         print("{} SMILES retrieved".format(len(smiles_list)))
         return smiles_list
 
